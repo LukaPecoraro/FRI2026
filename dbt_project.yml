@@ -1,0 +1,22 @@
+name: FRI_DBT_TEST
+version: 1.0.0
+config-version: 2
+profile: FRI_DBT_TEST
+model-paths:
+  - models
+analysis-paths:
+  - analyses
+test-paths:
+  - tests
+seed-paths:
+  - seeds
+macro-paths:
+  - macros
+snapshot-paths:
+  - snapshots
+models:
+  FRI_DBT_TEST:
+    dimensions:
+      +materialized: table
+    facts:
+      +materialized: table

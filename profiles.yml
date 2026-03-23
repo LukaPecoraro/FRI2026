@@ -1,0 +1,10 @@
+FRI_DBT_TEST:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      role: ACCOUNTADMIN
+      warehouse: XS_WH
+      database: GREGA_DATA_LAKE
+      schema: GOLD
+      threads: 8
