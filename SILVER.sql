@@ -1,0 +1,218 @@
+USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE XS_WH;
+USE DATABASE GREGA_DATA_LAKE;
+
+------------------------------------------------------------
+-- SILVER.TRIP_DATA – full cleaned trip history
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS SILVER.TRIP_DATA (
+    VENDOR_ID               NUMBER(38,0),
+    PICKUP_DATETIME         TIMESTAMP,
+    DROPOFF_DATETIME        TIMESTAMP,
+    PASSENGER_COUNT         NUMBER(38,0),
+    TRIP_DISTANCE           FLOAT,
+    RATE_CODE_ID            NUMBER(38,0),
+    STORE_AND_FWD_FLAG      VARCHAR(1),
+    PU_LOCATION_ID          NUMBER(38,0),
+    DO_LOCATION_ID          NUMBER(38,0),
+    PAYMENT_TYPE            NUMBER(38,0),
+    FARE_AMOUNT             FLOAT,
+    EXTRA                   FLOAT,
+    MTA_TAX                 FLOAT,
+    TIP_AMOUNT              FLOAT,
+    TOLLS_AMOUNT            FLOAT,
+    IMPROVEMENT_SURCHARGE   FLOAT,
+    TOTAL_AMOUNT            FLOAT,
+    CONGESTION_SURCHARGE    FLOAT,
+    AIRPORT_FEE             FLOAT,
+    CBD_CONGESTION_FEE      FLOAT,
+    ADM_SOURCE_FILENAME     VARCHAR,
+    ADM_LOADED_AT           TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+MERGE INTO SILVER.TRIP_DATA AS tgt
+USING (
+    SELECT
+        VENDORID                AS VENDOR_ID,
+        TPEP_PICKUP_DATETIME    AS PICKUP_DATETIME,
+        TPEP_DROPOFF_DATETIME   AS DROPOFF_DATETIME,
+        PASSENGER_COUNT,
+        TRIP_DISTANCE,
+        RATECODEID              AS RATE_CODE_ID,
+        STORE_AND_FWD_FLAG,
+        PULOCATIONID            AS PU_LOCATION_ID,
+        DOLOCATIONID            AS DO_LOCATION_ID,
+        PAYMENT_TYPE,
+        FARE_AMOUNT,
+        EXTRA,
+        MTA_TAX,
+        TIP_AMOUNT,
+        TOLLS_AMOUNT,
+        IMPROVEMENT_SURCHARGE,
+        TOTAL_AMOUNT,
+        CONGESTION_SURCHARGE,
+        AIRPORT_FEE,
+        CBD_CONGESTION_FEE,
+        ADM_FILENAME            AS ADM_SOURCE_FILENAME
+    FROM BRONZE.TRIP_DATA
+    WHERE TPEP_PICKUP_DATETIME IS NOT NULL
+      AND TPEP_DROPOFF_DATETIME IS NOT NULL
+      AND TPEP_DROPOFF_DATETIME > TPEP_PICKUP_DATETIME
+      AND TRIP_DISTANCE >= 0
+      AND FARE_AMOUNT >= 0
+      AND TOTAL_AMOUNT >= 0
+) AS src
+ON  tgt.PICKUP_DATETIME  = src.PICKUP_DATETIME
+AND tgt.DROPOFF_DATETIME = src.DROPOFF_DATETIME
+AND tgt.VENDOR_ID        = src.VENDOR_ID
+AND tgt.PU_LOCATION_ID   = src.PU_LOCATION_ID
+AND tgt.DO_LOCATION_ID   = src.DO_LOCATION_ID
+WHEN NOT MATCHED THEN INSERT (
+    VENDOR_ID, PICKUP_DATETIME, DROPOFF_DATETIME, PASSENGER_COUNT,
+    TRIP_DISTANCE, RATE_CODE_ID, STORE_AND_FWD_FLAG,
+    PU_LOCATION_ID, DO_LOCATION_ID, PAYMENT_TYPE,
+    FARE_AMOUNT, EXTRA, MTA_TAX, TIP_AMOUNT, TOLLS_AMOUNT,
+    IMPROVEMENT_SURCHARGE, TOTAL_AMOUNT, CONGESTION_SURCHARGE,
+    AIRPORT_FEE, CBD_CONGESTION_FEE, ADM_SOURCE_FILENAME
+) VALUES (
+    src.VENDOR_ID, src.PICKUP_DATETIME, src.DROPOFF_DATETIME, src.PASSENGER_COUNT,
+    src.TRIP_DISTANCE, src.RATE_CODE_ID, src.STORE_AND_FWD_FLAG,
+    src.PU_LOCATION_ID, src.DO_LOCATION_ID, src.PAYMENT_TYPE,
+    src.FARE_AMOUNT, src.EXTRA, src.MTA_TAX, src.TIP_AMOUNT, src.TOLLS_AMOUNT,
+    src.IMPROVEMENT_SURCHARGE, src.TOTAL_AMOUNT, src.CONGESTION_SURCHARGE,
+    src.AIRPORT_FEE, src.CBD_CONGESTION_FEE, src.ADM_SOURCE_FILENAME
+);
+
+------------------------------------------------------------
+-- SILVER.TAXI_ZONE_LOOKUP – full location reference
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS SILVER.TAXI_ZONE_LOOKUP (
+    LOCATION_ID     INTEGER      NOT NULL,
+    BOROUGH         VARCHAR(100),
+    ZONE            VARCHAR(100),
+    SERVICE_ZONE    VARCHAR(100)
+);
+
+MERGE INTO SILVER.TAXI_ZONE_LOOKUP AS tgt
+USING BRONZE.TAXI_ZONE_LOOKUP AS src
+ON tgt.LOCATION_ID = src.LOCATIONID
+WHEN MATCHED THEN UPDATE SET
+    tgt.BOROUGH      = src.BOROUGH,
+    tgt.ZONE         = src.ZONE,
+    tgt.SERVICE_ZONE = src.SERVICE_ZONE
+WHEN NOT MATCHED THEN INSERT (LOCATION_ID, BOROUGH, ZONE, SERVICE_ZONE)
+VALUES (src.LOCATIONID, src.BOROUGH, src.ZONE, src.SERVICE_ZONE);
+
+------------------------------------------------------------
+-- SILVER.WEATHER_DATA – flattened daily weather from JSON
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS SILVER.WEATHER_DATA (
+    DATE_MEASURE    DATE         NOT NULL,
+    TEMP_AVG_C      FLOAT,
+    TEMP_MIN_C      FLOAT,
+    TEMP_MAX_C      FLOAT,
+    ADM_SOURCE_FILENAME  VARCHAR,
+    ADM_LOADED_AT   TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+MERGE INTO SILVER.WEATHER_DATA AS tgt
+USING (
+    SELECT
+        p.value:temp:minDateTimeISO::DATE                              AS DATE_MEASURE,
+        ROUND((p.value:temp:avgF::FLOAT - 32) * 5 / 9, 2)            AS TEMP_AVG_C,
+        ROUND((p.value:temp:minF::FLOAT - 32) * 5 / 9, 2)            AS TEMP_MIN_C,
+        ROUND((p.value:temp:maxF::FLOAT - 32) * 5 / 9, 2)            AS TEMP_MAX_C,
+        w.ADM_FILENAME                                                 AS ADM_SOURCE_FILENAME
+    FROM BRONZE.WEATHER_REPORTS w,
+        LATERAL FLATTEN(input => w.JSON_DATA:response[0]:periods) p
+) AS src
+ON tgt.DATE_MEASURE = src.DATE_MEASURE
+WHEN MATCHED THEN UPDATE SET
+    tgt.TEMP_AVG_C          = src.TEMP_AVG_C,
+    tgt.TEMP_MIN_C          = src.TEMP_MIN_C,
+    tgt.TEMP_MAX_C          = src.TEMP_MAX_C,
+    tgt.ADM_SOURCE_FILENAME = src.ADM_SOURCE_FILENAME,
+    tgt.ADM_LOADED_AT       = CURRENT_TIMESTAMP()
+WHEN NOT MATCHED THEN INSERT (DATE_MEASURE, TEMP_AVG_C, TEMP_MIN_C, TEMP_MAX_C, ADM_SOURCE_FILENAME)
+VALUES (src.DATE_MEASURE, src.TEMP_AVG_C, src.TEMP_MIN_C, src.TEMP_MAX_C, src.ADM_SOURCE_FILENAME);
+
+------------------------------------------------------------
+-- DATA QUALITY TESTS: BRONZE → SILVER count verification
+------------------------------------------------------------
+
+SELECT
+    'TRIP_DATA' AS TABLE_NAME,
+    b.BRONZE_TOTAL,
+    b.BRONZE_FILTERED,
+    s.SILVER_COUNT,
+    b.BRONZE_REJECTED,
+    CASE
+        WHEN s.SILVER_COUNT = b.BRONZE_FILTERED THEN 'PASS'
+        WHEN s.SILVER_COUNT > b.BRONZE_FILTERED THEN 'FAIL – SILVER has extra rows (possible duplicates)'
+        ELSE 'FAIL – SILVER is missing rows'
+    END AS TEST_RESULT
+FROM (
+    SELECT
+        COUNT(*)                                           AS BRONZE_TOTAL,
+        COUNT_IF(
+            TPEP_PICKUP_DATETIME IS NOT NULL
+            AND TPEP_DROPOFF_DATETIME IS NOT NULL
+            AND TPEP_DROPOFF_DATETIME > TPEP_PICKUP_DATETIME
+            AND TRIP_DISTANCE >= 0
+            AND FARE_AMOUNT >= 0
+            AND TOTAL_AMOUNT >= 0
+        )                                                  AS BRONZE_FILTERED,
+        COUNT(*) - COUNT_IF(
+            TPEP_PICKUP_DATETIME IS NOT NULL
+            AND TPEP_DROPOFF_DATETIME IS NOT NULL
+            AND TPEP_DROPOFF_DATETIME > TPEP_PICKUP_DATETIME
+            AND TRIP_DISTANCE >= 0
+            AND FARE_AMOUNT >= 0
+            AND TOTAL_AMOUNT >= 0
+        )                                                  AS BRONZE_REJECTED
+    FROM BRONZE.TRIP_DATA
+) b
+CROSS JOIN (
+    SELECT COUNT(*) AS SILVER_COUNT FROM SILVER.TRIP_DATA
+) s;
+
+SELECT
+    'TAXI_ZONE_LOOKUP' AS TABLE_NAME,
+    b.BRONZE_COUNT,
+    s.SILVER_COUNT,
+    CASE
+        WHEN s.SILVER_COUNT = b.BRONZE_COUNT THEN 'PASS'
+        ELSE 'FAIL – count mismatch'
+    END AS TEST_RESULT
+FROM (
+    SELECT COUNT(*) AS BRONZE_COUNT FROM BRONZE.TAXI_ZONE_LOOKUP
+) b
+CROSS JOIN (
+    SELECT COUNT(*) AS SILVER_COUNT FROM SILVER.TAXI_ZONE_LOOKUP
+) s;
+
+SELECT
+    'WEATHER_DATA' AS TABLE_NAME,
+    b.BRONZE_FLATTENED_COUNT,
+    s.SILVER_COUNT,
+    CASE
+        WHEN s.SILVER_COUNT = b.BRONZE_FLATTENED_COUNT THEN 'PASS'
+        WHEN s.SILVER_COUNT < b.BRONZE_FLATTENED_COUNT THEN 'PASS – fewer due to date-level dedup'
+        ELSE 'FAIL – SILVER has extra rows'
+    END AS TEST_RESULT
+FROM (
+    SELECT COUNT(*) AS BRONZE_FLATTENED_COUNT
+    FROM BRONZE.WEATHER_REPORTS w,
+         LATERAL FLATTEN(input => w.JSON_DATA:response[0]:periods) p
+) b
+CROSS JOIN (
+    SELECT COUNT(*) AS SILVER_COUNT FROM SILVER.WEATHER_DATA
+) s;
+
+
+-- Potential Exercises
+-- Add tables to track all changes - similar like Slowly Changing Dimension 4 type
+
