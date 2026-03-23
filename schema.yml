@@ -1,0 +1,90 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: Date dimension with daily grain for 2025
+    columns:
+      - name: date_sk
+        description: Surrogate key (YYYYMMDD integer, -1 for unknown)
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_time
+    description: Time dimension with minute grain (00:00 to 23:59)
+    columns:
+      - name: time_sk
+        description: Surrogate key (HHMM integer, -1 for unknown)
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_location
+    description: Taxi zone location dimension from NYC TLC zone lookup
+    columns:
+      - name: location_sk
+        description: Surrogate key (-1 for unknown)
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_vendor
+    description: Taxi vendor dimension
+    columns:
+      - name: vendor_sk
+        description: Surrogate key (-1 for unknown)
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_rate_code
+    description: Trip rate code dimension
+    columns:
+      - name: rate_code_sk
+        description: Surrogate key (-1 for unknown)
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_payment_type
+    description: Payment type dimension
+    columns:
+      - name: payment_type_sk
+        description: Surrogate key (-1 for unknown)
+        tests:
+          - unique
+          - not_null
+
+  - name: fact_trip
+    description: Trip fact table with all measures and FK references to dimensions
+    columns:
+      - name: pickup_date_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_sk
+      - name: pickup_location_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_location')
+              field: location_sk
+      - name: vendor_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_vendor')
+              field: vendor_sk
+      - name: rate_code_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_rate_code')
+              field: rate_code_sk
+      - name: payment_type_sk
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_payment_type')
+              field: payment_type_sk

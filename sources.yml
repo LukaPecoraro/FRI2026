@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: silver
+    database: GREGA_DATA_LAKE
+    schema: SILVER
+    tables:
+      - name: trip_data
+      - name: taxi_zone_lookup
