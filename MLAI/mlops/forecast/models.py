@@ -1,8 +1,7 @@
 import json
-import numpy as np
 import pandas as pd
 import xgboost as xgb
-from snowflake.snowpark import Session, functions as F
+from snowflake.snowpark import Session
 from snowflake.snowpark.context import get_active_session
 from snowflake.ml.experiment import ExperimentTracking
 from snowflake.ml.registry import Registry
@@ -13,7 +12,6 @@ session = Session.builder.config("connection_name", "FRI_SF").create()
 session = get_active_session()
 session.use_database("LSP_DB")
 session.use_warehouse("ML_WH")
-
 
 FEATURES = [
     "AVG_UNITS_7D", "AVG_UNITS_14D", "AVG_UNITS_28D",
@@ -92,7 +90,6 @@ with exp.start_run(f"tabicl_10fold_{date_time_now}"):
         "cv_mae_std":  round(cv_scores.std(), 4),
     })
     print(f"TABICL CV MAE: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
-
 
 # ── Register model (fit on full dataset first) ──
 tabicl_model.fit(X, y)

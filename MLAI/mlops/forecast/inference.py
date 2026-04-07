@@ -1,8 +1,6 @@
-from snowflake.snowpark import Session, functions as F, dataframe as spdf
-from snowflake.snowpark.context import get_active_session
+from snowflake.snowpark import Session, functions as F
 from snowflake.ml.registry import Registry
 from snowflake.ml.feature_store import FeatureStore
-import pandas as pd
 
 FEATURES = [
     "AVG_UNITS_7D", "AVG_UNITS_14D", "AVG_UNITS_28D",
