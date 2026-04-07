@@ -1,8 +1,3 @@
-"""
-SNOWFLAKE ML DEMO: Demand Forecasting
-Step 3: ML Experiments — 10-Fold CV, Model Registry
-"""
-
 import json
 import numpy as np
 import pandas as pd
@@ -47,10 +42,10 @@ params = dict(
     random_state=42,
     n_jobs=-1,
 )
-model = xgb.XGBRegressor(**params)
+xgb_model = xgb.XGBRegressor(**params)
 
 cv_scores = -cross_val_score(
-    model, X, y, cv=10, scoring="neg_mean_absolute_error", n_jobs=-1
+    xgb_model, X, y, cv=10, scoring="neg_mean_absolute_error", n_jobs=-1
 )
 
 date_time_now = pd.Timestamp.now().strftime("%Y_%m_%d_%H_%M_%S")
@@ -63,17 +58,30 @@ with exp.start_run(f"xgboost_10fold_{date_time_now}"):
     })
     print(f"XGBOOST CV MAE: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
 
+# ── Register model (fit on full dataset first) ──
+xgb_model.fit(X, y)
+
+registry = Registry(session, database_name="LSP_DB", schema_name="MODELS")
+registry.log_model(
+    model=xgb_model,
+    model_name="DEMAND_FORECAST_XGBOOST",
+    version_name="v1",
+    comment="XGBoost — 10-fold CV MAE: {:.4f} ± {:.4f}".format(
+        cv_scores.mean(), cv_scores.std()
+    ),
+    conda_dependencies=["xgboost", "scikit-learn"],
+    sample_input_data=X.iloc[:100],
+)
 
 # Tabular foundation model
 params = dict(
-    n_estimators=8,
+    n_estimators=1,
     outlier_threshold=4,
 )
-model = TabICLRegressor(**params)
+tabicl_model = TabICLRegressor(**params, verbose=True)
 
 cv_scores = -cross_val_score(
-    model, X, y, cv=10, scoring="neg_mean_absolute_error", n_jobs=-1
-)
+    tabicl_model, X, y, cv=10, scoring="neg_mean_absolute_error", verbose=1)
 
 date_time_now = pd.Timestamp.now().strftime("%Y_%m_%d_%H_%M_%S")
 
@@ -83,23 +91,19 @@ with exp.start_run(f"tabicl_10fold_{date_time_now}"):
         "cv_mae_mean": round(cv_scores.mean(), 4),
         "cv_mae_std":  round(cv_scores.std(), 4),
     })
-    print(f"XGBOOST CV MAE: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
-
-
-
+    print(f"TABICL CV MAE: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
 
 
 # ── Register model (fit on full dataset first) ──
-model.fit(X, y)
-
-registry = Registry(session, database_name="LSP_DB", schema_name="ML_MODELS")
+tabicl_model.fit(X, y)
+registry = Registry(session, database_name="LSP_DB", schema_name="MODELS")
 registry.log_model(
-    model=model,
-    model_name="DEMAND_FORECAST_XGBOOST",
+    model=tabicl_model,
+    model_name="TABICL_FORECASTER",
     version_name="v1",
-    comment="XGBoost — 10-fold CV MAE: {:.4f} ± {:.4f}".format(
+    comment="TabICL — 10-fold CV MAE: {:.4f} ± {:.4f}".format(
         cv_scores.mean(), cv_scores.std()
     ),
-    conda_dependencies=["xgboost", "scikit-learn"],
+    pip_requirements=["tabicl"],
     sample_input_data=X.iloc[:100],
 )

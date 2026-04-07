@@ -12,11 +12,6 @@ session.use_database("LSP_DB")
 session.use_schema("FEATURES")
 session.use_warehouse("ML_WH")
 
-# ─────────────────────────────────────────────
-# 1. Initialise Feature Store
-#    All Feature Store objects live in the
-#    LSP_DB.FEATURE_STORE schema.
-# ─────────────────────────────────────────────
 fs = FeatureStore(
     session=session,
     database="LSP_DB",
@@ -24,26 +19,18 @@ fs = FeatureStore(
     default_warehouse="ML_WH",
     creation_mode=CreationMode.CREATE_IF_NOT_EXIST,
 )
-print("✅  Feature Store connected:", fs)
 
-# ─────────────────────────────────────────────
-# 2. Entity: product × store
-#    join_keys are the columns used to join
-#    feature views to the spine (label table).
-# ─────────────────────────────────────────────
+# Entity: product × store
+#   join_keys are the columns used to join
+#   feature views to the spine (label table).
 product_store_entity = Entity(
     name="PRODUCT_STORE",
     join_keys=["PRODUCT_ID", "STORE_ID"],
     desc="Composite entity representing a (product, store) pair",
 )
 fs.register_entity(product_store_entity)
-print("✅  Entity registered:", product_store_entity.name)
 
-# ─────────────────────────────────────────────
-# 3. Feature View 1: Rolling time-series features
-#    Computed from RAW_DATA.DAILY_SALES using
-#    Snowpark window functions.
-# ─────────────────────────────────────────────
+# Feature View 1: Rolling time-series features
 raw_sales = session.table("LSP_DB.RAW_DATA.DAILY_SALES")
 
 w7  = Window.partition_by("PRODUCT_ID", "STORE_ID").order_by("SALE_DATE").rows_between(-6, 0)
@@ -100,12 +87,8 @@ ts_fv = ts_fv.attach_feature_desc({
 registered_ts_fv = fs.register_feature_view(
     ts_fv, version="v1", block=True, overwrite=True
 )
-print("✅  FeatureView registered:", registered_ts_fv.name, "status:", registered_ts_fv.status)
 
-# ─────────────────────────────────────────────
-# 4. Feature View 2: Calendar / product metadata features
-#    These are static/slow-moving features.
-# ─────────────────────────────────────────────
+# Feature View 2: Calendar / product metadata features
 calendar_feature_df = raw_sales.select(
     "PRODUCT_ID",
     "STORE_ID",
@@ -149,19 +132,14 @@ cal_fv = cal_fv.attach_feature_desc({
 registered_cal_fv = fs.register_feature_view(
     cal_fv, version="v1", block=True, overwrite=True
 )
-print("✅  FeatureView registered:", registered_cal_fv.name, "status:", registered_cal_fv.status)
 
-# ─────────────────────────────────────────────
-# 5. List all Feature Views
-# ─────────────────────────────────────────────
-print("\n── Registered Feature Views ──")
+# List all Feature Views
+print("─ Registered Feature Views ──")
 fs.list_feature_views().select('name', 'version', 'desc', 'refresh_freq').show()
 
-# ─────────────────────────────────────────────
 # 6. Generate a training dataset
 #    Spine = all (PRODUCT_ID, STORE_ID, SALE_DATE, UNITS_SOLD) rows
 #    Feature Store point-in-time joins the FeatureViews onto the spine.
-# ─────────────────────────────────────────────
 spine_df = session.table("LSP_DB.RAW_DATA.DAILY_SALES").select(
     "PRODUCT_ID",
     "STORE_ID",
